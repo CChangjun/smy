@@ -1,0 +1,119 @@
+// STA모드 packet 송신부
+#include <esp_now.h>
+#include <WiFi.h>
+
+// RECEIVER MAC Address
+uint8_t broadcastAddress[] = {0xa8, 0x42, 0xe3, 0xc9, 0xdd, 0xd8};
+
+#define HEADER 0x11
+#define FUNCTION 0x44
+#define LENGTH 0x77
+#define END_PACKET 0xF0
+#define DATA_TEMP 0x22
+
+// 패딩 비트 방지 
+#pragma pack(1) 
+typedef struct struct_message {
+  unsigned char Tx_packet[8];
+  unsigned char chk_packet; // 체크 비트
+} send_Packet;
+#pragma pack(pop)
+
+send_Packet struct_;
+esp_now_peer_info_t peerInfo; // peer 정보 저장
+
+unsigned short CRC16_modbus(unsigned char *addr, int num) {
+  unsigned short CRC = 0xFFFF;
+  int i;
+  while (num--) {
+    CRC ^= *addr++;
+    for (i = 0; i < 8; i++) {
+      if (CRC & 1) {
+        CRC >>= 1;
+        CRC ^= 0xA001;
+      } else {
+        CRC >>= 1;
+      }
+    }
+  }
+  return CRC;
+}
+
+void send_P() {
+  unsigned char send_buffer[8];
+  unsigned short temp_CRC16;
+
+  // 패킷 구성
+  send_buffer[0] = HEADER;
+  send_buffer[1] = FUNCTION;
+  send_buffer[2] = LENGTH;
+  send_buffer[3] = DATA_TEMP; // 데이터 값 
+  send_buffer[4] = DATA_TEMP; // 데이터 값
+  send_buffer[5] = END_PACKET;
+
+  // CRC16 계산
+  temp_CRC16 = CRC16_modbus(send_buffer, 6);
+  send_buffer[6] = temp_CRC16 % 256;
+  send_buffer[7] = temp_CRC16 / 256;
+
+
+  memcpy(struct_.Tx_packet, send_buffer, sizeof(send_buffer));
+
+  // 디버깅
+  Serial.println("Generated Packet:");
+  for (int i = 0; i < sizeof(send_buffer); i++) {
+    Serial.printf("Byte %d: 0x%02X\n", i, send_buffer[i]);
+  }
+}
+
+// 콜백 함수: 데이터가 전송됐을 때 호출
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  
+  WiFi.mode(WIFI_STA);
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  // 데이터 전송 콜백 등록
+  esp_now_register_send_cb(OnDataSent);
+
+  // RECEIVER와 페어링
+  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  peerInfo.channel = 0;  
+  peerInfo.encrypt = false; // 암호화 비활성화
+
+  // peer 추가
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to add peer");
+    return;
+  }
+
+  // 구조체 초기화
+  memset(&struct_, 0, sizeof(struct_));
+}
+
+void loop() {
+
+  send_P();
+
+  // ESP-NOW 전송
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)&struct_, sizeof(struct_));
+
+  if (result == ESP_OK) {
+    Serial.println("Sent with success");
+  } else {
+    Serial.println("Error sending the data");
+  }
+
+  delay(2000); 
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////
