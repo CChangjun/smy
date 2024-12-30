@@ -1,0 +1,96 @@
+#include <esp_now.h>
+#include <WiFi.h>
+
+// 패딩 비트 방지 
+#pragma pack(1) 
+typedef struct struct_message {
+  unsigned char Tx_packet[8];
+  unsigned char chk_packet; // 체크 비트
+} send_Packet;
+#pragma pack(pop)
+
+send_Packet struct_;
+
+uint8_t receiverAddress[] = {0xA8, 0x42, 0xE3, 0xC9, 0xDD, 0xD8}; // 수신기 MAC 주소
+
+unsigned short CRC16_modbus(unsigned char *addr, int num) {
+  unsigned short CRC = 0xFFFF;
+  int i;
+  while (num--) {
+    CRC ^= *addr++;
+    for (i = 0; i < 8; i++) {
+      if (CRC & 1) {
+        CRC >>= 1;
+        CRC ^= 0xA001;
+      } else {
+        CRC >>= 1;
+      }
+    }
+  }
+  return CRC;
+}
+
+void sendPacket() {
+  unsigned char send_buffer[8];
+  unsigned short temp_CRC16;
+
+  // 패킷 구성
+  send_buffer[0] = 0x11; // HEADER
+  send_buffer[1] = 0x44; // FUNCTION
+  send_buffer[2] = 0x77; // LENGTH
+  send_buffer[3] = 0x22; // DATA_TEMP
+  send_buffer[4] = 0x22; // DATA_TEMP
+  send_buffer[5] = 0xF0; // END_PACKET
+
+  // CRC16 계산
+  temp_CRC16 = CRC16_modbus(send_buffer, 6);
+  send_buffer[6] = temp_CRC16 % 256;
+  send_buffer[7] = temp_CRC16 / 256;
+
+  // struct_의 Tx_packet에 복사
+  memcpy(struct_.Tx_packet, send_buffer, sizeof(send_buffer));
+
+  // ESP-NOW 전송
+  esp_err_t result = esp_now_send(receiverAddress, (uint8_t *)&struct_, sizeof(struct_));
+
+  if (result == ESP_OK) {
+    Serial.println("Sent with success");
+  } else {
+    Serial.println("Error sending the data");
+  }
+}
+
+void setup() {
+  // 시리얼 모니터 초기화
+  Serial.begin(115200);
+
+  // Wi-Fi AP 모드 설정
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("ESP_NOW_AP");
+
+  Serial.print("AP IP Address: ");
+  Serial.println(WiFi.softAPIP());
+
+  // ESP-NOW 초기화
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  // 수신기(peer) 정보 설정
+  esp_now_peer_info_t peerInfo;
+  memcpy(peerInfo.peer_addr, receiverAddress, 6);
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+
+  // Peer 추가
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to add peer");
+    return;
+  }
+}
+
+void loop() {
+  sendPacket();
+  delay(2000); // 2초 대기
+}
