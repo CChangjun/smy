@@ -1,0 +1,46 @@
+//STA packet 수신부 코드 
+
+#include <esp_now.h>
+#include <WiFi.h>
+
+// 패딩 비트 방지 
+#pragma pack(1) 
+typedef struct struct_message {
+  unsigned char Tx_packet[8];
+  unsigned char chk_packet; // 체크 비트
+} send_Packet;
+#pragma pack(pop)
+
+send_Packet struct_;
+
+// 데이터 수신 콜백 함수
+void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+  if (len == sizeof(struct_)) {
+    memcpy(&struct_, incomingData, len);
+
+    Serial.println("Received Packet:");
+    for (int i = 0; i < sizeof(struct_.Tx_packet); i++) {
+      Serial.printf("Byte %d: 0x%02X\n", i, struct_.Tx_packet[i]);
+    }
+    Serial.printf("Checksum: 0x%02X\n", struct_.chk_packet);
+  } else {
+    Serial.println("Error:");
+  }
+}
+
+void setup() {
+
+  Serial.begin(115200);
+
+  WiFi.mode(WIFI_STA);
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  // 데이터 수신 콜백 등록
+  esp_now_register_recv_cb(OnDataRecv);
+}
+
+void loop() {}
