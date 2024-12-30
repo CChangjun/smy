@@ -14,8 +14,8 @@ uint8_t broadcastAddress[] = {0xa8, 0x42, 0xe3, 0xc9, 0xdd, 0xd8};
 // 패딩 비트 방지 
 #pragma pack(1) 
 typedef struct struct_message {
-  unsigned char Tx_packet[8];
-  unsigned char chk_packet; // 체크 비트
+  unsigned char Tx_packet[9];
+  unsigned char chk_bit; // 체크 비트
 } send_Packet;
 #pragma pack(pop)
 
@@ -38,35 +38,42 @@ unsigned short CRC16_modbus(unsigned char *addr, int num) {
   }
   return CRC;
 }
-
+void constrain_ (unsigned char b_Bit)
+{
+  if(b_Bit > 25)
+  {struct_.chk_bit = true;}
+  else
+  {
+    struct_.chk_bit = false;
+  }
+  
+}
 void send_P() {
-  unsigned char send_buffer[8];
+  unsigned char send_buffer[9];
   unsigned short temp_CRC16;
 
-  // 패킷 구성
   send_buffer[0] = HEADER;
   send_buffer[1] = FUNCTION;
   send_buffer[2] = LENGTH;
-  send_buffer[3] = DATA_TEMP; // 데이터 값 
-  send_buffer[4] = DATA_TEMP; // 데이터 값
-  send_buffer[5] = END_PACKET;
+  send_buffer[3] = random(1,50); // 데이터 값 
+  send_buffer[4] = random(50,100); // 데이터 값
+  constrain_(send_buffer[3]);
+  send_buffer[5] = struct_.chk_bit;
+  send_buffer[6] = END_PACKET;
 
-  // CRC16 계산
-  temp_CRC16 = CRC16_modbus(send_buffer, 6);
-  send_buffer[6] = temp_CRC16 % 256;
-  send_buffer[7] = temp_CRC16 / 256;
-
+  temp_CRC16 = CRC16_modbus(send_buffer, 7);
+  send_buffer[7] = temp_CRC16 % 256;
+  send_buffer[8] = temp_CRC16 / 256;
 
   memcpy(struct_.Tx_packet, send_buffer, sizeof(send_buffer));
 
-  // 디버깅
-  Serial.println("Generated Packet:");
+  Serial.println("Packet:");
   for (int i = 0; i < sizeof(send_buffer); i++) {
     Serial.printf("Byte %d: 0x%02X\n", i, send_buffer[i]);
   }
 }
 
-// 콜백 함수: 데이터가 전송됐을 때 호출
+// 콜백 함수: 데이터가 전송됐을 때 호출 -- 예제에서 따옴 
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   Serial.print("\r\nLast Packet Send Status:\t");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
@@ -91,21 +98,21 @@ void setup() {
   peerInfo.channel = 0;  
   peerInfo.encrypt = false; // 암호화 비활성화
 
-  // peer 추가
+  // peer 추가 -- 예제에서 따옴 
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
     Serial.println("Failed to add peer");
     return;
   }
 
   // 구조체 초기화
-  memset(&struct_, 0, sizeof(struct_));
+  memset(&struct_, 0, sizeof(struct_));  
 }
 
 void loop() {
 
   send_P();
 
-  // ESP-NOW 전송
+  //result에 담고 조건처리, 우항은 ESP-NOW 전송 부분
   esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)&struct_, sizeof(struct_));
 
   if (result == ESP_OK) {
