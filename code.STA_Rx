@@ -6,8 +6,8 @@
 // 패딩 비트 방지 
 #pragma pack(1) 
 typedef struct struct_message {
-  unsigned char Tx_packet[8];
-  unsigned char chk_packet; // 체크 비트
+  unsigned char Tx_packet[9];
+  unsigned char chk_bit; // 체크 비트
 } send_Packet;
 #pragma pack(pop)
 
@@ -22,7 +22,7 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
     for (int i = 0; i < sizeof(struct_.Tx_packet); i++) {
       Serial.printf("Byte %d: 0x%02X\n", i, struct_.Tx_packet[i]);
     }
-    Serial.printf("Checksum: 0x%02X\n", struct_.chk_packet);
+    Serial.printf("Check_Bit: 0x%02X\n", struct_.chk_bit);
   } else {
     Serial.println("Error:");
   }
